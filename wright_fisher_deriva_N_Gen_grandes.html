@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="es-MX">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Modelo Wright-Fisher – Deriva Génica</title>
+  <style>
+    body {
+      font-family: sans-serif;
+      background: #fff;
+      color: #222;
+      margin: 0;
+      padding: 1.5rem;
+    }
+    h2 { font-size: 18px; font-weight: 500; margin: 0 0 4px; }
+    p.sub { font-size: 13px; color: #666; margin: 0 0 16px; }
+    canvas { display: block; width: 100%; border-radius: 8px; }
+    .ctrl {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin: 10px 0;
+      font-size: 13px;
+      color: #555;
+    }
+    input[type=range] { flex: 1; }
+    button {
+      font-size: 13px;
+      padding: 5px 14px;
+      border-radius: 6px;
+      border: 0.5px solid #bbb;
+      background: transparent;
+      color: #222;
+      cursor: pointer;
+    }
+    button:hover { background: #f5f5f5; }
+    #msg { font-size: 13px; color: #888; margin-top: 6px; min-height: 18px; }
+    .legend { font-size: 12px; color: #888; margin-top: 4px; }
+    @media (prefers-color-scheme: dark) {
+      body { background: #1a1a1a; color: #e0e0e0; }
+      button { border-color: #555; color: #e0e0e0; }
+      button:hover { background: #2a2a2a; }
+      .ctrl { color: #aaa; }
+      p.sub, #msg, .legend { color: #aaa; }
+    }
+  </style>
+</head>
+<body>
+  <h2>Modelo Wright-Fisher – Deriva Génica</h2>
+  <p class="sub">Cada generación, los descendientes eligen padres al azar. Solo por casualidad, un alelo termina dominando a toda la población.</p>
+  <canvas id="c" height="200"></canvas>
+  <div class="ctrl">
+    <span>Tamaño poblacional</span>
+    <input type="range" id="N" min="10" max="1000" value="30" step="10" oninput="document.getElementById('Nv').textContent=this.value">
+    <span id="Nv" style="min-width:28px">30</span>
+  </div>
+  <div class="ctrl">
+    <span>Generaciones</span>
+    <input type="range" id="G" min="20" max="300" value="80" step="10" oninput="document.getElementById('Gv').textContent=this.value">
+    <span id="Gv" style="min-width:28px">80</span>
+    <button onclick="reiniciar()">Reiniciar ↺</button>
+  </div>
+  <div id="msg">Observa cómo un color se fija en la población…</div>
+  <div class="legend">Las poblaciones pequeñas derivan más rápido. Con N=1000 y pocas generaciones, la deriva es casi imperceptible. Más generaciones dan más tiempo para que ocurra la fijación.</div>
+
+  <script>
+    const canvas = document.getElementById('c');
+    const ctx = canvas.getContext('2d');
+    const W = 680, H = 200;
+    canvas.width = W; canvas.height = H;
+
+    let N = 30, GENS = 80, freq = [], corriendo = true, raf;
+    const COL_A = '#7F77DD', COL_B = '#1D9E75';
+
+    function reiniciar() {
+      N = +document.getElementById('N').value;
+      GENS = +document.getElementById('G').value;
+      freq = [0.5];
+      corriendo = true;
+      document.getElementById('msg').textContent = 'Observa cómo un color se fija en la población…';
+      cancelAnimationFrame(raf);
+      ciclo();
+    }
+
+    function paso() {
+      const p = freq[freq.length - 1];
+      let cuenta = 0;
+      for (let i = 0; i < N; i++) if (Math.random() < p) cuenta++;
+      freq.push(cuenta / N);
+    }
+
+    function dibujar() {
+      const oscuro = window.matchMedia('(prefers-color-scheme: dark)').matches;
+      const colorEje = oscuro ? 'rgba(200,200,200,0.2)' : 'rgba(128,128,128,0.3)';
+      const colorEtiq = oscuro ? 'rgba(200,200,200,0.7)' : 'rgba(128,128,128,0.7)';
+
+      ctx.clearRect(0, 0, W, H);
+      const padX = 40, padY = 20;
+      const gw = W - padX * 2, gh = H - padY * 2;
+
+      ctx.fillStyle = 'rgba(127,119,221,0.07)';
+      ctx.fillRect(padX, padY, gw, gh);
+
+      if (freq.length > 1) {
+        const escX = gw / GENS;
+
+        ctx.beginPath();
+        ctx.moveTo(padX, padY + gh);
+        freq.forEach((f, i) => ctx.lineTo(padX + i * escX, padY + gh * (1 - f)));
+        ctx.lineTo(padX + (freq.length - 1) * escX, padY + gh);
+        ctx.closePath();
+        ctx.fillStyle = COL_A + '55';
+        ctx.fill();
+
+        ctx.beginPath();
+        freq.forEach((f, i) => {
+          const x = padX + i * escX;
+          const y = padY + gh * (1 - f);
+          i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+        });
+        ctx.strokeStyle = COL_A;
+        ctx.lineWidth = 2;
+        ctx.stroke();
+
+        ctx.beginPath();
+        ctx.moveTo(padX, padY);
+        freq.forEach((f, i) => ctx.lineTo(padX + i * escX, padY + gh * (1 - f)));
+        ctx.lineTo(padX + (freq.length - 1) * escX, padY);
+        ctx.closePath();
+        ctx.fillStyle = COL_B + '55';
+        ctx.fill();
+      }
+
+      ctx.strokeStyle = colorEje;
+      ctx.lineWidth = 0.5;
+      ctx.beginPath();
+      ctx.moveTo(padX, padY); ctx.lineTo(padX, padY + gh); ctx.lineTo(padX + gw, padY + gh);
+      ctx.stroke();
+
+      ctx.fillStyle = colorEtiq;
+      ctx.font = '11px sans-serif';
+      ctx.textAlign = 'right';
+      ['100%', '50%', '0%'].forEach((l, i) => ctx.fillText(l, padX - 4, padY + [0, gh / 2, gh][i] + 4));
+
+      ctx.textAlign = 'center';
+      ctx.fillText('generaciones', padX + gw / 2, H - 3);
+
+      ctx.fillStyle = COL_A; ctx.fillRect(padX + gw - 130, padY + 6, 10, 10);
+      ctx.fillStyle = colorEtiq; ctx.fillText('alelo A', padX + gw - 93, padY + 15);
+      ctx.fillStyle = COL_B; ctx.fillRect(padX + gw - 68, padY + 6, 10, 10);
+      ctx.fillStyle = colorEtiq; ctx.fillText('alelo B', padX + gw - 30, padY + 15);
+    }
+
+    function ciclo() {
+      if (freq.length <= GENS && corriendo) {
+        paso();
+        const p = freq[freq.length - 1];
+        if (p <= 0 || p >= 1) {
+          corriendo = false;
+          const ganador = p >= 1 ? 'El alelo A se fijó' : 'El alelo B se fijó';
+          document.getElementById('msg').textContent = ganador + ' — ¡un alelo ganó solo por azar!';
+        }
+        dibujar();
+        raf = requestAnimationFrame(ciclo);
+      } else {
+        dibujar();
+      }
+    }
+
+    reiniciar();
+  </script>
+</body>
+</html>

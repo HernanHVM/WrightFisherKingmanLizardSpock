@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="es-MX">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Coalescencia de Kingman</title>
+  <style>
+    body {
+      font-family: sans-serif;
+      background: #fff;
+      color: #222;
+      margin: 0;
+      padding: 1.5rem;
+    }
+    h2 { font-size: 18px; font-weight: 500; margin: 0 0 4px; }
+    p.sub { font-size: 13px; color: #666; margin: 0 0 16px; }
+    canvas { display: block; width: 100%; border-radius: 8px; }
+    .ctrl {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin: 10px 0;
+      font-size: 13px;
+      color: #555;
+    }
+    input[type=range] { flex: 1; }
+    button {
+      font-size: 13px;
+      padding: 5px 14px;
+      border-radius: 6px;
+      border: 0.5px solid #bbb;
+      background: transparent;
+      color: #222;
+      cursor: pointer;
+    }
+    button:hover { background: #f5f5f5; }
+    .legend { font-size: 12px; color: #888; margin-top: 8px; }
+    @media (prefers-color-scheme: dark) {
+      body { background: #1a1a1a; color: #e0e0e0; }
+      button { border-color: #555; color: #e0e0e0; }
+      button:hover { background: #2a2a2a; }
+      .ctrl { color: #aaa; }
+      p.sub, .legend { color: #aaa; }
+    }
+  </style>
+</head>
+<body>
+  <h2>Coalescencia de Kingman</h2>
+  <p class="sub">Rastreando linajes muestreados hacia atrás en el tiempo hasta encontrar su ancestro común más reciente (ACMR).</p>
+  <canvas id="c2" height="360"></canvas>
+  <div class="ctrl">
+    <span>Tamaño de muestra</span>
+    <input type="range" id="ns" min="3" max="10" value="6" step="1" oninput="document.getElementById('nsv').textContent=this.value; redibujar()">
+    <span id="nsv" style="min-width:16px">6</span>
+    <button onclick="redibujar()">Nuevo árbol ↺</button>
+  </div>
+  <div class="legend">Cada color = un linaje muestreado. Punto gris = ACMR. Las coalescencias ocurren más rápido cuando hay más linajes activos.</div>
+
+  <script>
+    const cv = document.getElementById('c2');
+    const cx = cv.getContext('2d');
+    const W = 680, H = 360;
+    cv.width = W; cv.height = H;
+
+    const COLORES = ['#7F77DD','#1D9E75','#D85A30','#D4537E','#378ADD','#639922','#BA7517','#E24B4A','#534AB7','#0F6E56'];
+
+    function simular(n) {
+      let hojas = Array.from({length: n}, (_, i) => ({id: i, x: 0, t: 0, hijos: []}));
+      let nodos = [...hojas];
+      let t = 0;
+      while (nodos.length > 1) {
+        const k = nodos.length;
+        t += -Math.log(Math.random()) / (k * (k - 1) / 2);
+        const i = Math.floor(Math.random() * k);
+        let j;
+        do { j = Math.floor(Math.random() * k); } while (j === i);
+        const padre = {id: nodos.length, t, hijos: [nodos[i], nodos[j]]};
+        nodos = nodos.filter((_, idx) => idx !== i && idx !== j);
+        nodos.push(padre);
+      }
+      return nodos[0];
+    }
+
+    function asignarX(nodo, lo, hi) {
+      if (!nodo.hijos.length) { nodo.px = (lo + hi) / 2; return; }
+      const mid = (lo + hi) / 2;
+      asignarX(nodo.hijos[0], lo, mid);
+      asignarX(nodo.hijos[1], mid, hi);
+      nodo.px = (nodo.hijos[0].px + nodo.hijos[1].px) / 2;
+    }
+
+    function dibujarArbol(raiz, n, maxT) {
+      const padX = 60, padY = 30;
+      const gw = W - padX * 2, gh = H - padY * 2 - 30;
+      const oscuro = window.matchMedia('(prefers-color-scheme: dark)').matches;
+      const colorEje = oscuro ? 'rgba(200,200,200,0.2)' : 'rgba(128,128,128,0.2)';
+      const colorEtiq = oscuro ? 'rgba(200,200,200,0.7)' : 'rgba(128,128,128,0.7)';
+
+      function tY(t) { return padY + gh * (1 - t / maxT); }
+      function nX(px) { return padX + px * gw; }
+
+      cx.clearRect(0, 0, W, H);
+
+      cx.strokeStyle = colorEje;
+      cx.lineWidth = 0.5;
+      cx.beginPath();
+      cx.moveTo(padX - 10, padY); cx.lineTo(padX - 10, padY + gh);
+      cx.stroke();
+
+      cx.fillStyle = colorEtiq;
+      cx.font = '11px sans-serif';
+      cx.textAlign = 'right';
+      cx.fillText('pasado', padX - 14, padY + 8);
+      cx.fillText('hoy', padX - 14, padY + gh + 4);
+
+      cx.strokeStyle = colorEje;
+      cx.beginPath();
+      cx.moveTo(padX - 10, padY);
+      cx.lineTo(padX - 14, padY + 10);
+      cx.moveTo(padX - 10, padY);
+      cx.lineTo(padX - 6, padY + 10);
+      cx.stroke();
+
+      function dibujarAristas(nodo, color) {
+        if (!nodo.hijos.length) return;
+        nodo.hijos.forEach((h) => {
+          const col = color || COLORES[h.id % COLORES.length];
+          cx.beginPath();
+          cx.moveTo(nX(h.px), tY(h.t));
+          cx.lineTo(nX(h.px), tY(nodo.t));
+          cx.lineTo(nX(nodo.px), tY(nodo.t));
+          cx.strokeStyle = col + 'cc';
+          cx.lineWidth = 2;
+          cx.stroke();
+          dibujarAristas(h, col);
+        });
+      }
+      dibujarAristas(raiz, null);
+
+      function dibujarHojas(nodo) {
+        if (!nodo.hijos.length) {
+          const col = COLORES[nodo.id % COLORES.length];
+          cx.beginPath();
+          cx.arc(nX(nodo.px), tY(0), 6, 0, Math.PI * 2);
+          cx.fillStyle = col;
+          cx.fill();
+          cx.fillStyle = colorEtiq;
+          cx.font = '11px sans-serif';
+          cx.textAlign = 'center';
+          cx.fillText('ind. ' + (nodo.id + 1), nX(nodo.px), tY(0) + 20);
+        } else {
+          nodo.hijos.forEach(dibujarHojas);
+        }
+      }
+      dibujarHojas(raiz);
+
+      cx.beginPath();
+      cx.arc(nX(raiz.px), tY(raiz.t), 8, 0, Math.PI * 2);
+      cx.fillStyle = '#888780';
+      cx.fill();
+      cx.fillStyle = colorEtiq;
+      cx.font = '11px sans-serif';
+      cx.textAlign = 'center';
+      cx.fillText('ACMR', nX(raiz.px), tY(raiz.t) - 12);
+    }
+
+    function redibujar() {
+      const n = +document.getElementById('ns').value;
+      document.getElementById('nsv').textContent = n;
+      const raiz = simular(n);
+      asignarX(raiz, 0, 1);
+      dibujarArbol(raiz, n, raiz.t);
+    }
+
+    redibujar();
+  </script>
+</body>
+</html>
